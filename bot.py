@@ -1053,7 +1053,7 @@ async def on_command_error(ctx, error):
 
 if __name__ == "__main__":
     load_dotenv()
-    token = os.getenv("TOKEN")
+    token = os.getenv("DISCORD_TOKEN")
     
     if not token:
         print("❌ Bot token not found! Set TOKEN in your .env file.")
@@ -1065,3 +1065,4 @@ if __name__ == "__main__":
         print("❌ Invalid bot token!")
     except Exception as e:
         print(f"❌ Failed to start bot: {e}")
+
