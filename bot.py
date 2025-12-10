@@ -40,7 +40,7 @@ BLOCKED_MESSAGES = [
 BLOCKED_WORDS = [
     "crack", "cracked", "copypaster", "paster", "ghost", "niga", "skid", "skidded", 
     "skidder", "skidding", "script kiddie", "scriptkiddie", "sk1d", "sk!d", "sk!dded",
-    "skidd", "ai", "skido", "kfc", "dog"
+    "skidd", "ai", "skido"
 ]
 
 WHITELIST_WORDS = [
@@ -800,7 +800,7 @@ async def process_message(message, is_edit=False):
             )
             embed.add_field(
                 name="Server Rules",
-                value="• Use appropriate language\n• No unauthorized links\n• No filter bypass attempts\n• No ASCII art to hide words\n• No flag emoji patterns\n• English only - no other languages\n• Keep messages respectful",
+                value="• Use appropriate language\n• No unauthorized links\n• No filter bypass attempts\n• No ASCII art to hide words\n• English only - no other languages\n• Keep messages respectful",
                 inline=False
             )
             await guild_member.send(embed=embed)
@@ -1147,3 +1147,4 @@ if __name__ == "__main__":
         print("❌ Invalid bot token!")
     except Exception as e:
         print(f"❌ Failed to start bot: {e}")
+
