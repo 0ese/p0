@@ -8,8 +8,6 @@ import datetime
 from dotenv import load_dotenv
 import unicodedata
 from aiohttp import web
-from collections import defaultdict, deque
-import time
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -52,13 +50,6 @@ WHITELIST_WORDS = [
     "fantastic", "astic", "drastic", "plastic", "elastic", "classic", "jurassic",
     "ghost writer", "ghosting", "ghostly", "ghosted", "past", "paste", "pasted"
 ]
-
-# === SPAM DETECTION (NO TIMEOUT, ONLY WARNINGS) ===
-user_message_history = defaultdict(lambda: deque(maxlen=10))
-user_warnings = defaultdict(int)
-SPAM_TIME_WINDOW = 60  # seconds
-SPAM_MESSAGE_LIMIT = 3
-MAX_WARNINGS = 5  # Just for tracking, no timeout
 
 # === AUTO-REPLY PATTERNS ===
 
@@ -469,37 +460,6 @@ def detect_multi_line_art(text):
     
     return False
 
-def check_spam_detection(user_id, message_content):
-    """Check for spam (same message repeated) - NO TIMEOUT, JUST WARNING"""
-    current_time = time.time()
-    user_history = user_message_history[user_id]
-    
-    # Clean old messages outside time window
-    while user_history and current_time - user_history[0]['time'] > SPAM_TIME_WINDOW:
-        user_history.popleft()
-    
-    # Add current message
-    user_history.append({
-        'content': message_content.lower().strip(),
-        'time': current_time
-    })
-    
-    # Check for repeated messages
-    message_counts = {}
-    for msg in user_history:
-        content = msg['content']
-        if content in message_counts:
-            message_counts[content] += 1
-        else:
-            message_counts[content] = 1
-    
-    # Check if any message appears 3 or more times
-    for content, count in message_counts.items():
-        if count >= SPAM_MESSAGE_LIMIT and len(content) > 2:  # Ignore very short messages
-            return True, count
-    
-    return False, 0
-
 def is_whitelisted_word(word):
     """Check if word is whitelisted"""
     word_lower = word.lower()
@@ -580,11 +540,11 @@ def check_blocked_words_ultimate(text):
     return len(violations) > 0, list(set(violations))
 
 def detect_non_english(text):
-    """Enhanced non-English language detection"""
-    if not text or len(text.strip()) < 3:
+    """STRICT non-English language detection - ONLY ENGLISH ALLOWED"""
+    if not text or len(text.strip()) < 2:
         return False
     
-    # Clean the text
+    # Clean the text - remove URLs, mentions, channels, emojis
     cleaned_text = re.sub(r'http[s]?://\S+', '', text)
     cleaned_text = re.sub(r'<@[!&]?\d+>', '', cleaned_text)
     cleaned_text = re.sub(r'<#\d+>', '', cleaned_text)
@@ -597,33 +557,64 @@ def detect_non_english(text):
     except:
         pass
     
-    # Convert Unicode to ASCII first
+    # Convert Unicode to ASCII first to handle fancy fonts
     cleaned_text = comprehensive_unicode_to_ascii(cleaned_text)
     
-    # Extract only text characters
-    text_only = re.sub(r'[^a-zA-ZÀ-ÿĀ-žА-я\u4e00-\u9fff\u0600-\u06ff\u0590-\u05ff\u3040-\u309f\u30a0-\u30ff\s]', '', cleaned_text)
+    # Remove numbers, punctuation, and special characters - keep only letters and spaces
+    text_only = re.sub(r'[^a-zA-Z\s]', '', cleaned_text)
     text_only = text_only.strip()
     
-    if len(text_only) < 3:
+    # If no letters remain after cleaning, allow it (could be just numbers/symbols)
+    if len(text_only) < 2:
         return False
     
+    # Check for non-English characters that survived the Unicode conversion
+    # Chinese/Japanese/Korean characters
+    if re.search(r'[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]', text):
+        return True
+    
+    # Arabic/Hebrew characters
+    if re.search(r'[\u0600-\u06ff\u0590-\u05ff]', text):
+        return True
+    
+    # Cyrillic characters (that weren't converted)
+    if re.search(r'[\u0400-\u04ff]', text):
+        return True
+    
+    # Thai, Hindi, and other Asian scripts
+    if re.search(r'[\u0e00-\u0e7f\u0900-\u097f\u1000-\u109f]', text):
+        return True
+    
+    # Check if the text contains mostly English letters
     total_chars = len(text_only.replace(' ', ''))
     if total_chars == 0:
         return False
     
-    # Count different script characters
     english_chars = len(re.findall(r'[a-zA-Z]', text_only))
-    cyrillic_chars = len(re.findall(r'[А-я]', text_only))
-    chinese_chars = len(re.findall(r'[\u4e00-\u9fff]', text_only))
-    arabic_chars = len(re.findall(r'[\u0600-\u06ff]', text_only))
-    hebrew_chars = len(re.findall(r'[\u0590-\u05ff]', text_only))
-    japanese_chars = len(re.findall(r'[\u3040-\u309f\u30a0-\u30ff]', text_only))
-    
     english_ratio = english_chars / total_chars
     
-    # More strict detection
-    if english_ratio < 0.6 and (cyrillic_chars > 1 or chinese_chars > 0 or arabic_chars > 1 or hebrew_chars > 1 or japanese_chars > 1):
+    # STRICT: If less than 90% English characters, consider it non-English
+    if english_ratio < 0.9:
         return True
+    
+    # Additional check: Look for common non-English patterns
+    # Check for sequences that look like other languages
+    words = text_only.lower().split()
+    suspicious_patterns = [
+        # Common Chinese pinyin patterns
+        r'^[bcdfghjklmnpqrstvwxyz]{3,}$',  # Too many consonants
+        # Common patterns in other languages
+        r'[qxz]{2,}',  # Repeated uncommon letters
+        r'^[aeiou]{4,}$',  # Too many vowels in sequence
+    ]
+    
+    for word in words:
+        if len(word) > 2:
+            for pattern in suspicious_patterns:
+                if re.search(pattern, word):
+                    # Only flag if it's a longer word and doesn't look like English
+                    if len(word) > 4 and not any(common in word for common in ['the', 'and', 'you', 'that', 'was', 'for', 'are', 'with', 'his', 'they']):
+                        return True
     
     return False
 
@@ -689,7 +680,7 @@ def check_auto_reply(message_content):
 # === MESSAGE PROCESSING ===
 
 async def process_message(message, is_edit=False):
-    """Enhanced message processing with spam detection - NO TIMEOUT, ONLY WARNINGS"""
+    """Enhanced message processing - NO SPAM DETECTION"""
     if message.author.bot or not message.guild:
         return
     
@@ -713,60 +704,39 @@ async def process_message(message, is_edit=False):
     if any(role.id in BYPASS_ROLES for role in guild_member.roles):
         return
     
-    # Check for spam - NO TIMEOUT, JUST WARNING
-    is_spam, spam_count = check_spam_detection(message.author.id, message.content)
-    if is_spam:
-        try:
-            await message.delete()
-        except discord.Forbidden:
-            pass
-        
-        # Increment warnings - NO TIMEOUT
-        user_warnings[message.author.id] += 1
-        
-        # Log spam detection
-        log_channel = bot.get_channel(LOG_CHANNEL_ID)
-        if log_channel:
-            embed = discord.Embed(
-                title="🚨 Spam Detected",
-                description=f"**User:** {guild_member.mention}\n**Channel:** {message.channel.mention}",
-                color=0xff6600,
-                timestamp=datetime.datetime.now(datetime.timezone.utc)
-            )
-            embed.add_field(name="Repeated Message", value=f"Sent {spam_count} times", inline=False)
-            embed.add_field(name="Warning Count", value=f"{user_warnings[message.author.id]} warnings", inline=False)
-            embed.add_field(name="Message Content", value=f"```\n{message.content[:200]}\n```", inline=False)
-            
-            try:
-                await log_channel.send(embed=embed)
-            except:
-                pass
-        
-        # DM user about spam - NO TIMEOUT MENTIONED
-        try:
-            embed = discord.Embed(
-                title="🚨 Spam Warning",
-                description=f"Please stop sending the same message repeatedly. Warning #{user_warnings[message.author.id]}",
-                color=0xff6600
-            )
-            embed.add_field(name="Note", value="Continued spam will result in more warnings.", inline=False)
-            await guild_member.send(embed=embed)
-        except:
-            pass
-        
-        return
-    
-    # Check non-English
+    # Check STRICT non-English - ONLY ENGLISH ALLOWED
     if detect_non_english(message.content):
         try:
             await message.delete()
         except discord.Forbidden:
             pass
         
+        # Log non-English detection
+        log_channel = bot.get_channel(LOG_CHANNEL_ID)
+        if log_channel:
+            embed = discord.Embed(
+                title="🌐 Non-English Message Blocked",
+                description=f"**User:** {guild_member.mention}\n**Channel:** {message.channel.mention}",
+                color=0x3498db,
+                timestamp=datetime.datetime.now(datetime.timezone.utc)
+            )
+            embed.add_field(name="Reason", value="Only English is allowed in this server", inline=False)
+            embed.add_field(name="Original Message", value=f"```\n{message.content[:300]}\n```", inline=False)
+            
+            # Show Unicode conversion
+            converted = comprehensive_unicode_to_ascii(message.content)
+            if converted != message.content:
+                embed.add_field(name="Unicode → ASCII", value=f"```\n{converted[:200]}\n```", inline=False)
+            
+            try:
+                await log_channel.send(embed=embed)
+            except:
+                pass
+        
         try:
             embed = discord.Embed(
                 title="🌐 Language Notice",
-                description="Please speak English only.",
+                description="Please speak English only. All other languages are not allowed.",
                 color=0x3498db
             )
             await message.channel.send(embed=embed, delete_after=10)
@@ -830,7 +800,7 @@ async def process_message(message, is_edit=False):
             )
             embed.add_field(
                 name="Server Rules",
-                value="• Use appropriate language\n• No unauthorized links\n• No filter bypass attempts\n• No ASCII art to hide words\n• No spam or repeated messages\n• No flag emoji patterns\n• Keep messages respectful",
+                value="• Use appropriate language\n• No unauthorized links\n• No filter bypass attempts\n• No ASCII art to hide words\n• No flag emoji patterns\n• English only - no other languages\n• Keep messages respectful",
                 inline=False
             )
             await guild_member.send(embed=embed)
@@ -894,17 +864,17 @@ async def scan_channels_on_startup():
 async def health_check_server():
     """Enhanced health check server for Render"""
     async def health(request):
-        return web.Response(text="✅ COMPLETE Discord Filter Bot is running!\n🛡️ ALL Mathematical Unicode A-Z Detection Active\n🚨 ALL Flag Emoji Detection Active\n⚠️ Spam Warnings Only (No Timeout)")
+        return web.Response(text="✅ COMPLETE Discord Filter Bot is running!\n🛡️ ALL Mathematical Unicode A-Z Detection Active\n🚨 ALL Flag Emoji Detection Active\n🌐 STRICT English-Only Language Detection\n❌ Spam Detection REMOVED")
     
     async def stats(request):
         stats_text = f"""📊 COMPLETE Bot Statistics:
 Monitored Channels: {len(MONITORED_CHANNELS)}
 Blocked Words: {len(BLOCKED_WORDS)}
 Auto-Reply Patterns: {len(AUTO_REPLY_PATTERNS)}
-Active Warnings: {len(user_warnings)}
 Servers: {len(bot.guilds) if bot.guilds else 0}
 Status: 🟢 COMPLETE Active
-Features: ALL A-Z Mathematical Unicode + ALL Flag Emojis + Spam Warnings"""
+Features: ALL A-Z Mathematical Unicode + ALL Flag Emojis + STRICT English-Only
+Spam Detection: ❌ REMOVED"""
         return web.Response(text=stats_text)
     
     app = web.Application()
@@ -926,13 +896,15 @@ async def on_ready():
     print(f'✅ {bot.user} is online with COMPLETE detection!')
     print(f'📢 Monitoring channels: {MONITORED_CHANNELS}')
     print(f'🛡️ COMPLETE ASCII art detection: ENABLED')
-    print(f'🚨 Spam detection: ENABLED (warnings only, no timeout)')
+    print(f'❌ Spam detection: REMOVED')
+    print(f'🌐 STRICT English-only detection: ENABLED')
     print(f'🔍 Scanning for: {len(BLOCKED_WORDS)} blocked words')
     print(f'🤖 Auto-reply patterns: {len(AUTO_REPLY_PATTERNS)} active')
     print(f'🌍 COMPLETE Unicode support: ALL A-Z Mathematical symbols')
     print(f'🎯 ALL Flag emoji detection: ENABLED (🇦-🇿)')
     print(f'🔤 Mathematical symbols detection: ALL VARIANTS A-Z')
     print(f'📝 Example detection: 𝔸ℕ𝕋𝕀 𝕂𝔽ℂ 𝔻𝕆𝔾 → ANTI KFC DOG')
+    print(f'🚫 Chinese/Non-English: STRICT BLOCKING')
     
     # Start health server
     bot.loop.create_task(health_check_server())
@@ -1022,15 +994,18 @@ async def test_message(ctx, *, text: str):
     """Test message with COMPLETE detection"""
     is_violation, violations = analyze_message_content(text)
     has_flags, flag_violations = detect_flag_emojis(text)
+    is_non_english = detect_non_english(text)
     
     embed = discord.Embed(
         title="🔍 COMPLETE Scanner Test",
-        color=0xff4444 if (is_violation or has_flags) else 0x44ff44
+        color=0xff4444 if (is_violation or has_flags or is_non_english) else 0x44ff44
     )
     
-    if is_violation or has_flags:
+    if is_violation or has_flags or is_non_english:
         embed.add_field(name="🚫 BLOCKED", value="Message would be deleted", inline=False)
         all_violations = violations + flag_violations
+        if is_non_english:
+            all_violations.append("Non-English language detected")
         embed.add_field(name="Violations", value='\n'.join(f"• {v}" for v in all_violations[:8]), inline=False)
     else:
         embed.add_field(name="✅ ALLOWED", value="Message would pass all COMPLETE checks", inline=False)
@@ -1054,54 +1029,13 @@ async def test_message(ctx, *, text: str):
         details.append("Mathematical Unicode detected (ALL A-Z variants)")
     if re.search(r'[\U0001F1E6-\U0001F1FF]', text):
         details.append("Flag emojis detected (ALL country flags)")
-    if detect_non_english(text):
-        details.append("Non-English detected")
+    if is_non_english:
+        details.append("Non-English language detected (STRICT)")
     
     if details:
         embed.add_field(name="COMPLETE Detection Details", value='\n'.join(f"• {d}" for d in details), inline=False)
     
     await ctx.send(embed=embed, delete_after=90)
-
-@bot.command(name="clearwarnings")
-@commands.has_permissions(administrator=True)
-async def clear_warnings(ctx, user: discord.Member):
-    """Clear spam warnings for a user"""
-    if user.id in user_warnings:
-        old_warnings = user_warnings[user.id]
-        user_warnings[user.id] = 0
-        await ctx.send(f"✅ Cleared {old_warnings} warnings for {user.mention}", delete_after=15)
-    else:
-        await ctx.send(f"⚠️ {user.mention} has no warnings to clear.", delete_after=10)
-
-@bot.command(name="warnings")
-@commands.has_permissions(administrator=True)
-async def show_warnings(ctx, user: discord.Member = None):
-    """Show warnings for a user or all users"""
-    if user:
-        warnings = user_warnings.get(user.id, 0)
-        await ctx.send(f"📊 {user.mention} has {warnings} spam warnings.", delete_after=20)
-    else:
-        if user_warnings:
-            warning_list = []
-            for user_id, warnings in list(user_warnings.items())[:10]:  # Show top 10
-                try:
-                    member = ctx.guild.get_member(user_id)
-                    if member:
-                        warning_list.append(f"{member.mention}: {warnings} warnings")
-                except:
-                    pass
-            
-            if warning_list:
-                embed = discord.Embed(
-                    title="📊 User Warnings (No Timeout)",
-                    description='\n'.join(warning_list),
-                    color=0x3498db
-                )
-                await ctx.send(embed=embed, delete_after=30)
-            else:
-                await ctx.send("✅ No users with warnings found.", delete_after=10)
-        else:
-            await ctx.send("✅ No warnings recorded.", delete_after=10)
 
 @bot.command(name="filterhelp")
 @commands.has_permissions(administrator=True)
@@ -1109,7 +1043,7 @@ async def filter_help(ctx):
     """Show all COMPLETE commands"""
     embed = discord.Embed(
         title="🛡️ COMPLETE Filter Bot Commands",
-        description="Advanced bypass detection with COMPLETE A-Z Unicode + ALL flags",
+        description="Advanced bypass detection with COMPLETE A-Z Unicode + ALL flags + STRICT English-only",
         color=0x3498db
     )
     
@@ -1125,8 +1059,6 @@ async def filter_help(ctx):
     embed.add_field(
         name="🔍 Testing & Moderation",
         value="`$testmessage <text>` - Full COMPLETE test\n"
-              "`$warnings [@user]` - Show warnings (no timeout)\n"
-              "`$clearwarnings @user` - Clear user warnings\n"
               "`$stats` - Show COMPLETE statistics",
         inline=False
     )
@@ -1134,14 +1066,16 @@ async def filter_help(ctx):
     embed.add_field(
         name="🎯 COMPLETE Features",
         value="✅ Auto-scans on startup (200 msgs/channel)\n"
-              "✅ Spam detection (warnings only, no timeout)\n"
+              "❌ Spam detection REMOVED\n"
               "✅ ALL Mathematical Unicode A-Z detection\n"
               "✅ ALL Flag emoji detection (🇦-🇿)\n"
+              "✅ STRICT English-only language detection\n"
               "✅ Enhanced ASCII art extraction\n"
               "✅ Diagonal & reverse reading\n"
               "✅ Mixed script detection\n"
               "✅ Leetspeak detection\n"
-              "✅ Example: 𝔸ℕ𝕋𝕀 𝕂𝔽ℂ 𝔻𝕆𝔾 → DETECTED",
+              "✅ Example: 𝔸ℕ𝕋𝕀 𝕂𝔽ℂ 𝔻𝕆𝔾 → DETECTED\n"
+              "✅ Chinese/Non-English → BLOCKED",
         inline=False
     )
     
@@ -1159,34 +1093,20 @@ async def show_stats(ctx):
     embed.add_field(name="Monitored Channels", value=str(len(MONITORED_CHANNELS)), inline=True)
     embed.add_field(name="Blocked Words", value=str(len(BLOCKED_WORDS)), inline=True)
     embed.add_field(name="Auto-Reply Patterns", value=str(len(AUTO_REPLY_PATTERNS)), inline=True)
-    embed.add_field(name="Active Warnings", value=str(len(user_warnings)), inline=True)
     embed.add_field(name="Servers", value=str(len(bot.guilds)), inline=True)
+    embed.add_field(name="Spam Detection", value="❌ REMOVED", inline=True)
     embed.add_field(name="Status", value="🟢 COMPLETE Active", inline=True)
-    
-    # Show top warned users
-    if user_warnings:
-        top_warned = sorted(user_warnings.items(), key=lambda x: x[1], reverse=True)[:5]
-        warned_list = []
-        for user_id, warnings in top_warned:
-            try:
-                member = ctx.guild.get_member(user_id)
-                if member:
-                    warned_list.append(f"{member.name}: {warnings}")
-            except:
-                pass
-        
-        if warned_list:
-            embed.add_field(name="Top Warned Users (No Timeout)", value='\n'.join(warned_list), inline=False)
     
     embed.add_field(
         name="COMPLETE Detection Capabilities",
         value="• ALL Mathematical Unicode A-Z mappings\n"
               "• ALL Flag emoji detection (🇦-🇿)\n"
+              "• STRICT English-only language detection\n"
               "• Multi-directional ASCII art reading\n"
-              "• Spam pattern recognition (warnings only)\n"
               "• Mixed script analysis\n"
               "• Leetspeak conversion\n"
-              "• Example: 𝔸ℕ𝕋𝕀 𝕂𝔽ℂ 𝔻𝕆𝔾 → ANTI KFC DOG",
+              "• Example: 𝔸ℕ𝕋𝕀 𝕂𝔽ℂ 𝔻𝕆𝔾 → ANTI KFC DOG\n"
+              "• Chinese text → BLOCKED IMMEDIATELY",
         inline=False
     )
     
@@ -1217,7 +1137,8 @@ if __name__ == "__main__":
     
     print("🚀 Starting COMPLETE Discord Filter Bot...")
     print("🛡️ COMPLETE Unicode Detection System Loading...")
-    print("🚨 Spam Detection System Loading (warnings only)...")
+    print("❌ Spam Detection System REMOVED...")
+    print("🌐 STRICT English-Only Detection Loading...")
     print("🎯 ALL Flag Emoji Detection Loading...")
     print("🔤 ALL Mathematical A-Z Symbols Loading...")
     try:
