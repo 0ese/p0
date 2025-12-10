@@ -25,6 +25,7 @@ LOG_CHANNEL_ID = 1352874878298099712
 MONITORED_CHANNELS = [
     1350460442354651179,
     1387751360593924207,
+    1352874878298099712,
     1369709315274965082
 ]
 
@@ -1100,3 +1101,4 @@ if __name__ == "__main__":
         print("❌ Invalid bot token!")
     except Exception as e:
         print(f"❌ Failed to start bot: {e}")
+
