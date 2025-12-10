@@ -7,6 +7,8 @@ import asyncio
 import datetime
 from dotenv import load_dotenv
 import unicodedata
+from aiohttp import web
+import threading
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -663,6 +665,26 @@ async def process_message(message, is_edit=False):
     
     await bot.process_commands(message)
 
+# === HEALTH CHECK SERVER FOR RENDER ===
+
+def run_health_server():
+    """Run a simple health check server so Render detects the bot is running"""
+    async def health(request):
+        return web.Response(text="✅ Discord Bot is running!")
+    
+    async def status(request):
+        bot_status = "🟢 Online" if bot.is_ready() else "🔴 Offline"
+        return web.Response(text=f"Bot Status: {bot_status}\nServers: {len(bot.guilds)}")
+    
+    app = web.Application()
+    app.router.add_get('/', health)
+    app.router.add_get('/health', health)
+    app.router.add_get('/status', status)
+    
+    port = int(os.getenv('PORT', 10000))
+    print(f"🌐 Health server starting on port {port}")
+    web.run_app(app, host='0.0.0.0', port=port, print=None)
+
 # === EVENTS ===
 
 @bot.event
@@ -1053,16 +1075,28 @@ async def on_command_error(ctx, error):
 
 if __name__ == "__main__":
     load_dotenv()
-    token = os.getenv("DISCORD_TOKEN")
+    
+    # Try DISCORD_TOKEN first, then fall back to TOKEN
+    token = os.getenv("DISCORD_TOKEN") or os.getenv("TOKEN")
     
     if not token:
-        print("❌ Bot token not found! Set TOKEN in your .env file.")
+        print("❌ Bot token not found!")
+        print("Set DISCORD_TOKEN or TOKEN in your environment variables.")
         exit(1)
     
+    # Start health check server in background thread
+    print("🌐 Starting health check server...")
+    health_thread = threading.Thread(target=run_health_server, daemon=True)
+    health_thread.start()
+    
+    # Give the health server a moment to start
+    import time
+    time.sleep(2)
+    
+    print("🤖 Starting Discord bot...")
     try:
         bot.run(token)
     except discord.LoginFailure:
         print("❌ Invalid bot token!")
     except Exception as e:
         print(f"❌ Failed to start bot: {e}")
-
