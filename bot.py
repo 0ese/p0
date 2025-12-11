@@ -33,14 +33,13 @@ BLOCKED_MESSAGES = [
     "🅃🄴🄻🄴",
     "ayawtandogaakongotin",
     "raw.githubusercontent.com",
-    "ai",
     "SKIDDER"
 ]
 
 BLOCKED_WORDS = [
     "crack", "cracked", "copypaster", "paster", "ghost", "niga", "skid", "skidded", 
     "skidder", "skidding", "script kiddie", "scriptkiddie", "sk1d", "sk!d", "sk!dded",
-    "skidd", "ai", "skido"
+    "skidd", "skido"
 ]
 
 WHITELIST_WORDS = [
@@ -1147,4 +1146,5 @@ if __name__ == "__main__":
         print("❌ Invalid bot token!")
     except Exception as e:
         print(f"❌ Failed to start bot: {e}")
+
 
