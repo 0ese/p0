@@ -31,6 +31,7 @@ BLOCKED_MESSAGES = [
     "🄷🅃🅃🄿🅂",
     "🅃🄴🄻🄴",
     "ayawtandogaakongotin",
+    "jxbadscript",
     "raw.githubusercontent.com",
     "SKIDDER"
 ]
@@ -1145,6 +1146,7 @@ if __name__ == "__main__":
         print("❌ Invalid bot token!")
     except Exception as e:
         print(f"❌ Failed to start bot: {e}")
+
 
 
 
