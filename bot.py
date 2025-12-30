@@ -103,8 +103,8 @@ def comprehensive_unicode_to_ascii(text):
         elif 0x1D41A <= code <= 0x1D433:  # 𝐚-𝐳
             result[i] = chr(ord('a') + (code - 0x1D41A))
         
-        # Mathematical Italic (𝐴-𝑍, 𝑎-𝑧) - COMPLETE A-Z
-        elif 0x1D434 <= code <= 0x1D44D:  # 𝐴-�Z
+        # Mathematical Italic (𝐴-𝑉, 𝑎-𝑧) - COMPLETE A-Z
+        elif 0x1D434 <= code <= 0x1D44D:  # 𝐴-𝑍
             result[i] = chr(ord('A') + (code - 0x1D434))
         elif 0x1D44E <= code <= 0x1D467:  # 𝑎-𝑧
             result[i] = chr(ord('a') + (code - 0x1D44E))
@@ -679,7 +679,7 @@ def check_auto_reply(message_content):
 # === MESSAGE PROCESSING ===
 
 async def process_message(message, is_edit=False):
-    """Enhanced message processing - NO SPAM DETECTION"""
+    """Enhanced message processing - NO SPAM DETECTION - NO DM USER"""
     if message.author.bot or not message.guild:
         return
     
@@ -790,21 +790,7 @@ async def process_message(message, is_edit=False):
             except Exception as e:
                 print(f"Error sending to log: {e}")
         
-        # DM user
-        try:
-            embed = discord.Embed(
-                title="⚠️ Message Removed",
-                description="Your message was removed for violating server rules.",
-                color=0xffaa00
-            )
-            embed.add_field(
-                name="Server Rules",
-                value="• Use appropriate language\n• No unauthorized links\n• No filter bypass attempts\n• No ASCII art to hide words\n• English only - no other languages\n• Keep messages respectful",
-                inline=False
-            )
-            await guild_member.send(embed=embed)
-        except:
-            pass
+        # DM USER FUNCTIONALITY COMPLETELY REMOVED
         
         return
     
@@ -863,7 +849,7 @@ async def scan_channels_on_startup():
 async def health_check_server():
     """Enhanced health check server for Render"""
     async def health(request):
-        return web.Response(text="✅ COMPLETE Discord Filter Bot is running!\n🛡️ ALL Mathematical Unicode A-Z Detection Active\n🚨 ALL Flag Emoji Detection Active\n🌐 STRICT English-Only Language Detection\n❌ Spam Detection REMOVED")
+        return web.Response(text="✅ COMPLETE Discord Filter Bot is running!\n🛡️ ALL Mathematical Unicode A-Z Detection Active\n🚨 ALL Flag Emoji Detection Active\n🌐 STRICT English-Only Language Detection\n❌ Spam Detection REMOVED\n❌ DM User REMOVED")
     
     async def stats(request):
         stats_text = f"""📊 COMPLETE Bot Statistics:
@@ -873,7 +859,8 @@ Auto-Reply Patterns: {len(AUTO_REPLY_PATTERNS)}
 Servers: {len(bot.guilds) if bot.guilds else 0}
 Status: 🟢 COMPLETE Active
 Features: ALL A-Z Mathematical Unicode + ALL Flag Emojis + STRICT English-Only
-Spam Detection: ❌ REMOVED"""
+Spam Detection: ❌ REMOVED
+DM User: ❌ REMOVED"""
         return web.Response(text=stats_text)
     
     app = web.Application()
@@ -896,6 +883,7 @@ async def on_ready():
     print(f'📢 Monitoring channels: {MONITORED_CHANNELS}')
     print(f'🛡️ COMPLETE ASCII art detection: ENABLED')
     print(f'❌ Spam detection: REMOVED')
+    print(f'❌ DM user: REMOVED')
     print(f'🌐 STRICT English-only detection: ENABLED')
     print(f'🔍 Scanning for: {len(BLOCKED_WORDS)} blocked words')
     print(f'🤖 Auto-reply patterns: {len(AUTO_REPLY_PATTERNS)} active')
@@ -1066,6 +1054,7 @@ async def filter_help(ctx):
         name="🎯 COMPLETE Features",
         value="✅ Auto-scans on startup (200 msgs/channel)\n"
               "❌ Spam detection REMOVED\n"
+              "❌ DM user REMOVED\n"
               "✅ ALL Mathematical Unicode A-Z detection\n"
               "✅ ALL Flag emoji detection (🇦-🇿)\n"
               "✅ STRICT English-only language detection\n"
@@ -1094,6 +1083,7 @@ async def show_stats(ctx):
     embed.add_field(name="Auto-Reply Patterns", value=str(len(AUTO_REPLY_PATTERNS)), inline=True)
     embed.add_field(name="Servers", value=str(len(bot.guilds)), inline=True)
     embed.add_field(name="Spam Detection", value="❌ REMOVED", inline=True)
+    embed.add_field(name="DM User", value="❌ REMOVED", inline=True)
     embed.add_field(name="Status", value="🟢 COMPLETE Active", inline=True)
     
     embed.add_field(
@@ -1137,6 +1127,7 @@ if __name__ == "__main__":
     print("🚀 Starting COMPLETE Discord Filter Bot...")
     print("🛡️ COMPLETE Unicode Detection System Loading...")
     print("❌ Spam Detection System REMOVED...")
+    print("❌ DM User System REMOVED...")
     print("🌐 STRICT English-Only Detection Loading...")
     print("🎯 ALL Flag Emoji Detection Loading...")
     print("🔤 ALL Mathematical A-Z Symbols Loading...")
@@ -1146,7 +1137,3 @@ if __name__ == "__main__":
         print("❌ Invalid bot token!")
     except Exception as e:
         print(f"❌ Failed to start bot: {e}")
-
-
-
-
