@@ -541,47 +541,52 @@ def advanced_ascii_art_extraction(text):
     return list(set(extracted_sequences))  # Remove duplicates
 
 def detect_multi_line_art(text):
-    """Enhanced multi-line ASCII art detection"""
+    """Detect ASCII art while avoiding normal multi-line English text"""
     if not text or len(text) < 10:
         return False
-    
-    lines = text.split('\n')
-    
-    # Check for multiple lines
-    if len(lines) > 4:
-        return True
-    
-    # Check for consistent structure
-    if len(lines) >= 2:
-        lengths = [len(line) for line in lines if line.strip()]
-        if lengths:
-            avg_length = sum(lengths) / len(lengths)
-            # Lower threshold for detection
-            if avg_length > 15 and len([l for l in lengths if abs(l - avg_length) < 15]) >= 2:
-                return True
-    
-    # Check for high density of special characters or Unicode
+
+    # Ignore empty/whitespace-only lines for structure checks
+    lines = [line for line in text.split('\n') if line.strip()]
+    if len(lines) < 3:
+        return False
+
+    art_chars = set('|/\\()[]{}#@*=_-+<>~^`.:;\'"!?$%&')
+    art_like_lines = 0
+
     for line in lines:
-        if len(line) > 10:
-            # Count special ASCII art characters
-            special_count = sum(1 for c in line if c in '|/\\()[]{}#@*=_-+<>~^`.:;')
-            # Count Unicode characters that could be used for art
-            unicode_count = sum(1 for c in line if ord(c) > 127)
-            
-            total_special = special_count + unicode_count
-            if total_special > len(line) * 0.2:  # Lowered threshold
-                return True
-    
-    # Check for mathematical Unicode characters (common in bypasses)
-    unicode_math_pattern = re.compile(r'[\U0001D400-\U0001D7FF]')  # Mathematical Alphanumeric Symbols
-    if unicode_math_pattern.search(text):
+        if len(line) < 8:
+            continue
+
+        converted = comprehensive_unicode_to_ascii(line)
+        total_chars = len(converted)
+        if total_chars == 0:
+            continue
+
+        special_count = sum(1 for c in converted if c in art_chars or (not c.isalnum() and not c.isspace()))
+        letter_count = sum(1 for c in converted if c.isalpha())
+        special_ratio = special_count / total_chars
+
+        # Strong ASCII-art hints: repeated art characters or long lines dominated by symbols
+        if re.search(r'[|\\/_=+\-]{4,}', converted):
+            art_like_lines += 1
+            continue
+        if total_chars > 40 and special_ratio >= 0.25:
+            art_like_lines += 1
+            continue
+        if special_ratio >= 0.35 and letter_count <= total_chars * 0.4:
+            art_like_lines += 1
+
+    if art_like_lines >= 2:
         return True
-    
-    # Check for flag emojis or regional indicators
-    flag_pattern = re.compile(r'[\U0001F1E6-\U0001F1FF]')
-    if flag_pattern.search(text):
-        return True
-    
+
+    # Wide blocks with many non-letter characters across the paragraph
+    joined = ''.join(lines)
+    if joined:
+        avg_len = sum(len(l) for l in lines) / len(lines)
+        non_letter_ratio = sum(1 for c in joined if not c.isalpha() and not c.isspace()) / len(joined)
+        if avg_len > 60 and non_letter_ratio > 0.35:
+            return True
+
     return False
 
 def is_whitelisted_word(word):
